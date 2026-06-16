@@ -29,30 +29,31 @@ WUSOUND_API_KEY=你的悟声 API Key
 
 ## 白名单
 
-建议至少配置 `allowed_group_ids`，避免插件在所有群聊里自动生成语音。
+插件支持**群聊过滤**和**用户过滤**，各有三种模式：`whitelist`（仅列表生效）、`blacklist`（列表屏蔽）、`none`（不限制）。
+
+默认均为 `none`，即所有会话生效。
+
+### 群聊过滤
 
 ```text
-allowed_group_ids:
-123456789
-987654321
+group_filter_mode: whitelist
+group_filter_list:
+  - 123456789
+  - onebot:GroupMessage:987654321
 ```
 
-也可以填写完整会话标识：
+`group_filter_list` 可填纯群号或完整会话 ID，用 `/wusound_where` 查看当前会话标识。
+
+### 用户过滤
 
 ```text
-allowed_origins:
-aiocqhttp:GroupMessage:123456789
+user_filter_mode: whitelist
+user_filter_list:
+  - 10001
+  - 123456789
 ```
 
-还可以按用户 ID 限制：
-
-```text
-allowed_user_ids:
-10001
-123456789
-```
-
-三种白名单都留空时，插件会在所有会话生效。只要任意一个白名单命中，插件就会工作。自动 TTS 和 `/wusound_*_test` 测试命令都会受白名单限制。
+两种过滤是**叠加关系**：必须同时通过群聊和用户过滤，插件才会工作。任一配置为 `whitelist` 但列表为空时，该层过滤不会放行任何请求。
 
 ## 常用配置
 

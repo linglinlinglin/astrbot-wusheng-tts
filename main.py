@@ -105,11 +105,15 @@ class WusoundTtsPlugin(Star):
         group_id = self._extract_group_id(event, origin)
         user_id = self._extract_user_id(event)
         is_allowed = self._is_event_allowed(event)
+        group_mode = self._get_str("group_filter_mode", "none")
+        user_mode = self._get_str("user_filter_mode", "none")
         yield event.plain_result(
             "当前悟声 TTS 会话信息：\n"
             f"group_id: {group_id or '未识别'}\n"
             f"user_id: {user_id or '未识别'}\n"
             f"origin: {origin or '未识别'}\n"
+            f"group_filter: {group_mode}\n"
+            f"user_filter: {user_mode}\n"
             f"allowed: {is_allowed}"
         )
 
@@ -161,28 +165,40 @@ class WusoundTtsPlugin(Star):
         return not self._looks_like_non_spoken_text(text)
 
     def _is_event_allowed(self, event: AstrMessageEvent) -> bool:
-        origins = self._get_list("allowed_origins")
-        group_ids = self._get_list("allowed_group_ids")
-        user_ids = self._get_list("allowed_user_ids")
-        if not origins and not group_ids and not user_ids:
-            return True
+        # -- 群聊过滤 --
+        group_mode = self._get_str("group_filter_mode", "none")
+        if group_mode != "none":
+            origin = str(getattr(event, "unified_msg_origin", "") or "")
+            group_id = self._extract_group_id(event, origin)
+            group_list = self._get_list("group_filter_list")
+            is_in = any(
+                self._is_group_match(origin, group_id, item) for item in group_list
+            )
+            if group_mode == "whitelist" and not is_in:
+                logger.debug(
+                    f"悟声 TTS 不在群白名单: origin={origin}, group_id={group_id}"
+                )
+                return False
+            if group_mode == "blacklist" and is_in:
+                logger.debug(
+                    f"悟声 TTS 在群黑名单: origin={origin}, group_id={group_id}"
+                )
+                return False
 
-        origin = str(getattr(event, "unified_msg_origin", "") or "")
-        if origins and origin in origins:
-            return True
+        # -- 用户过滤 --
+        user_mode = self._get_str("user_filter_mode", "none")
+        if user_mode != "none":
+            user_id = self._extract_user_id(event)
+            user_list = self._get_list("user_filter_list")
+            is_in = bool(user_id and user_id in user_list)
+            if user_mode == "whitelist" and not is_in:
+                logger.debug(f"悟声 TTS 不在用户白名单: user_id={user_id}")
+                return False
+            if user_mode == "blacklist" and is_in:
+                logger.debug(f"悟声 TTS 在用户黑名单: user_id={user_id}")
+                return False
 
-        group_id = self._extract_group_id(event, origin)
-        if group_ids and group_id and group_id in group_ids:
-            return True
-
-        user_id = self._extract_user_id(event)
-        if user_ids and user_id and user_id in user_ids:
-            return True
-
-        logger.debug(
-            f"悟声 TTS 已跳过非白名单会话: origin={origin}, group_id={group_id}, user_id={user_id}"
-        )
-        return False
+        return True
 
     def _extract_group_id(self, event: AstrMessageEvent, origin: str) -> str:
         for method_name in ("get_group_id", "get_groupid"):
@@ -233,6 +249,23 @@ class WusoundTtsPlugin(Star):
                 return str(method)
 
         return ""
+    
+    def _is_group_match(self, origin: str, group_id: str, item: str) -> bool:
+        """智能匹配群聊标识，支持完整 UMO 和纯群号两种格式。"""
+        item = str(item).strip()
+        if not item:
+            return False
+        if item == origin or item == group_id:
+            return True
+        # UMO 格式匹配：onebot:GroupMessage:123456 对 123456
+        if ":" in item:
+            parts = item.rsplit(":", 1)
+            if parts[-1] == group_id:
+                return True
+        # 纯数字匹配：123456 对 onebot:GroupMessage:123456
+        if ":" in origin and origin.rsplit(":", 1)[-1] == item:
+            return True
+        return False
 
     def _estimate_token_count(self, text: str) -> int:
         cjk_or_kana_count = len(re.findall(r"[\u3040-\u30ff\u3400-\u9fff]", text))
