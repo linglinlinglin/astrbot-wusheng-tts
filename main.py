@@ -68,15 +68,28 @@ class WusoundTtsPlugin(Star):
         if not self._should_generate_audio(source_text):
             return
 
+        logger.info(f"悟声 TTS 开始处理: 原文({len(source_text)}字)={source_text[:100]}")
+
         async with self.semaphore:
             try:
                 if self._get_bool("mock_mode", False):
                     audio = self._generate_mock_audio()
+                    logger.info("悟声 TTS Mock 模式: 已生成测试音频")
                 else:
                     spoken_text = await self._translate_to_japanese(event, source_text)
+                    # 翻译结果无效（如纯英文 "can"），跳过 TTS
+                    if not re.search(r"[\u3040-\u30ff]", spoken_text):
+                        logger.warning(
+                            f"悟声 TTS 翻译结果不含假名，跳过: 原文={source_text[:100]}, "
+                            f"译文={spoken_text[:100]}"
+                        )
+                        return
+                    logger.info(f"悟声 TTS 翻译完成: {spoken_text[:100]}")
                     audio = await self._generate_audio(spoken_text)
                 event.set_extra("_wusound_tts_sending", True)
+                logger.info("悟声 TTS 正在发送音频...")
                 await self._send_audio(event, audio)
+                logger.info("悟声 TTS 音频发送完成")
             except Exception as exc:
                 logger.warning(f"悟声 TTS 音频生成失败: {exc}")
 
@@ -318,9 +331,11 @@ class WusoundTtsPlugin(Star):
         provider_name = self._get_str("translation_provider", "")
         if provider_name:
             try:
-                provider = self.context.get_provider(provider_name)
+                provider = self.context.get_provider_by_id(provider_id=provider_name)
             except Exception:
-                logger.warning(f"未找到翻译专用 LLM provider: {provider_name}，回退到会话 LLM")
+                logger.warning(
+                    f"未找到翻译专用 LLM provider: {provider_name}，回退到会话 LLM"
+                )
                 provider = None
         else:
             provider = None
@@ -359,7 +374,15 @@ class WusoundTtsPlugin(Star):
                 f"fallback=str(response)={str(response)[:200]}"
             )
         translated_text = self._extract_japanese(translated_text) or text
-        return self._clean_text(translated_text) or text
+        translated_text = self._clean_text(translated_text) or text
+
+        # 翻译结果不含假名 = 无效翻译，直接返回原文（由上游决定是否跳过）
+        if translated_text and not re.search(r"[\u3040-\u30ff]", translated_text):
+            logger.warning(
+                f"翻译结果不含日语假名(可能为无效结果): "
+                f"原文={text[:100]}, 译文={translated_text[:100]}"
+            )
+        return translated_text
 
     async def _generate_audio(self, spoken_text: str) -> GeneratedAudio:
         if self.session is None or self.session.closed:
