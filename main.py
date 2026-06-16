@@ -103,10 +103,12 @@ class WusoundTtsPlugin(Star):
         """显示当前会话标识，方便配置白名单。"""
         origin = str(getattr(event, "unified_msg_origin", "") or "")
         group_id = self._extract_group_id(event, origin)
+        user_id = self._extract_user_id(event)
         is_allowed = self._is_event_allowed(event)
         yield event.plain_result(
             "当前悟声 TTS 会话信息：\n"
             f"group_id: {group_id or '未识别'}\n"
+            f"user_id: {user_id or '未识别'}\n"
             f"origin: {origin or '未识别'}\n"
             f"allowed: {is_allowed}"
         )
@@ -161,7 +163,8 @@ class WusoundTtsPlugin(Star):
     def _is_event_allowed(self, event: AstrMessageEvent) -> bool:
         origins = self._get_list("allowed_origins")
         group_ids = self._get_list("allowed_group_ids")
-        if not origins and not group_ids:
+        user_ids = self._get_list("allowed_user_ids")
+        if not origins and not group_ids and not user_ids:
             return True
 
         origin = str(getattr(event, "unified_msg_origin", "") or "")
@@ -172,8 +175,12 @@ class WusoundTtsPlugin(Star):
         if group_ids and group_id and group_id in group_ids:
             return True
 
+        user_id = self._extract_user_id(event)
+        if user_ids and user_id and user_id in user_ids:
+            return True
+
         logger.debug(
-            f"悟声 TTS 已跳过非白名单会话: origin={origin}, group_id={group_id}"
+            f"悟声 TTS 已跳过非白名单会话: origin={origin}, group_id={group_id}, user_id={user_id}"
         )
         return False
 
@@ -198,6 +205,34 @@ class WusoundTtsPlugin(Star):
 
         numeric_parts = re.findall(r"\d+", origin)
         return numeric_parts[-1] if numeric_parts else ""
+
+    def _extract_user_id(self, event: AstrMessageEvent) -> str:
+        """从事件中提取用户 ID。"""
+        # 优先从 message_obj 中获取 sender 的 user_id
+        message_obj = getattr(event, "message_obj", None)
+        if message_obj is not None:
+            sender = getattr(message_obj, "sender", None)
+            if sender is not None:
+                user_id = getattr(sender, "user_id", None)
+                if user_id:
+                    return str(user_id)
+            raw_message = getattr(message_obj, "raw_message", None)
+            if isinstance(raw_message, dict):
+                user_id = raw_message.get("user_id") or raw_message.get("sender_user_id")
+                if user_id:
+                    return str(user_id)
+
+        # 尝试直接从 event 获取
+        for attr_name in ("get_user_id", "user_id", "sender_user_id"):
+            method = getattr(event, attr_name, None)
+            if callable(method):
+                user_id = method()
+                if user_id:
+                    return str(user_id)
+            if method is not None and not callable(method):
+                return str(method)
+
+        return ""
 
     def _estimate_token_count(self, text: str) -> int:
         cjk_or_kana_count = len(re.findall(r"[\u3040-\u30ff\u3400-\u9fff]", text))

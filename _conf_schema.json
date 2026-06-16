@@ -19,6 +19,11 @@
     "type": "text",
     "default": ""
   },
+  "allowed_user_ids": {
+    "description": "用户白名单。填写允许启用 TTS 的用户 ID，多个 ID 用换行或英文逗号分隔。留空表示不按用户限制。",
+    "type": "text",
+    "default": ""
+  },
   "tts_endpoint": {
     "description": "悟声同步实时生成语音接口地址。",
     "type": "string",
