@@ -1,166 +1,97 @@
-# AstrBot 悟声 TTS 插件
+# AstrBot 悟声 TTS 插件 (wusound_tts)
 
-这个插件会在 AstrBot 发送 AI 回复后读取本次回复文本。当回复的估算 token 数低于配置阈值时，插件会先调用当前会话使用的 LLM 把内容翻译成日语，再调用悟声 AI 实时 TTS 接口生成音频，并把音频作为文件发送到当前会话。
+## 项目描述
 
-当前版本按“文件”发送音频，后续可以把发送组件替换为平台支持的语音组件，实现直接发送群语音。
+这是一个为 [AstrBot](https://github.com/Soulter/AstrBot) 框架开发的文本转语音（TTS）插件。
+当 AstrBot 的 AI 生成短回复时，插件会自动拦截文本，调用当前会话的 LLM 将其翻译为自然口语的日语，并请求 **悟声 AI** 接口实时生成日语音频，最后以文件或语音气泡的形式发送到群聊或私聊中。
 
-## 安装
+---
 
-将整个 `astrbot_plugin_wusound_tts` 文件夹放到 AstrBot 插件目录，例如：
+## 具体功能
 
-```text
-data/plugins/astrbot_plugin_wusound_tts
-```
+- **🤖 自动日文翻译**：内置经过优化的严格英文翻译提示词，配合多层后处理逻辑，智能提取纯日语进行语音生成。
+- **⏱️ 短回复拦截**：支持设置 Token 阈值，只有短回复才会触发语音，避免长篇大论拖慢响应或刷屏。
+- **🛡️ 双层权限控制**：提供「群聊过滤」与「用户过滤」两层独立控制，均支持 `whitelist`（仅放行列表）、`blacklist`（屏蔽列表）与 `none`（无限制）模式。
+- **🗣️ 多种发送模式**：支持以 `file`（音频文件）或 `record`（原生语音）两种模式发送。`record` 模式会自动将远程音频下载到本地缓存后再发送，提高兼容性。
+- **🛠️ 零消耗调试模式**：内置 Mock 模式，不消耗悟声 API 额度和大模型 Token 即可测试发送链路。
+- **🔍 丰富的诊断命令**：提供多条专属命令用于排查文本污染、查询会话 ID 等。
 
-然后在 AstrBot WebUI 中重载插件或重启 AstrBot。
+---
 
-## 必填配置
+## 安装与操作
 
-```text
-api_key: 悟声开发者中心创建的 API Key
-voice_id: 悟声语音角色 ID
-```
+### 1. 安装步骤
 
-也可以不在配置里填写 `api_key`，改用环境变量：
+1. 进入 AstrBot 的插件目录：
+   ```bash
+   cd data/plugins
+   ```
+2. 克隆本仓库：
+   ```bash
+   git clone https://github.com/linglinlinglin/AstrBot-TTS-.git astrbot_plugin_wusound_tts
+   ```
+3. 在 AstrBot 管理面板重启框架或重载插件。
 
-```text
-WUSOUND_API_KEY=你的悟声 API Key
-```
+### 2. 基础配置
 
-## 白名单
+在 AstrBot 的 WebUI 配置页面找到 `wusound_tts` 插件，填写以下核心配置：
 
-插件支持**群聊过滤**和**用户过滤**，各有三种模式：`whitelist`（仅列表生效）、`blacklist`（列表屏蔽）、`none`（不限制）。
+- **api_key**: 悟声开发者中心申请的 API Key（也可在运行环境设置 `WUSOUND_API_KEY` 变量）。
+- **voice_id**: 悟声语音角色 ID。
+- **send_as**: 选择发送格式（`file` 或 `record`）。推荐先用 `file` 测试链路，跑通后再尝试改为 `record`。
 
-默认均为 `none`，即所有会话生效。
+### 3. 权限配置（白名单/黑名单）
 
-### 群聊过滤
+插件支持灵活的**群聊过滤**和**用户过滤**，两者是**叠加关系**（必须同时通过两层校验，插件才会工作）。
 
-```text
-group_filter_mode: whitelist
-group_filter_list:
-  - 123456789
-  - onebot:GroupMessage:987654321
-```
+- **群聊过滤 (`group_filter_mode`)**: 
+  - 可选 `whitelist` / `blacklist` / `none`。
+  - 在 `group_filter_list` 中填写群号或完整会话 ID（如 `123456` 或 `onebot:GroupMessage:123456`）。
+- **用户过滤 (`user_filter_mode`)**: 
+  - 可选 `whitelist` / `blacklist` / `none`。
+  - 在 `user_filter_list` 中填写允许或屏蔽的用户 ID。
 
-`group_filter_list` 可填纯群号或完整会话 ID，用 `/wusound_where` 查看当前会话标识。
+> **注意**：如果任一层配置为 `whitelist` 但其列表为空，该层过滤将不会放行任何请求！
 
-### 用户过滤
+### 4. 调试命令（仅管理员可用）
 
-```text
-user_filter_mode: whitelist
-user_filter_list:
-  - 10001
-  - 123456789
-```
+在聊天框中发送以下命令，帮助你快速调试和配置：
 
-两种过滤是**叠加关系**：必须同时通过群聊和用户过滤，插件才会工作。任一配置为 `whitelist` 但列表为空时，该层过滤不会放行任何请求。
+- `/wusound_where`：获取当前聊天的 `group_id`、`user_id` 和完整会话 `origin`，并显示权限是否放行，用于填写过滤名单。
+- `/wusound_preview`：预览 LLM 翻译结果，**不调用悟声 API**。用于排查输出文本是否混入了中文杂质或提示词是否对当前大模型失效。
+- `/wusound_test`：用当前 `send_as` 配置发送一条测试音频。
+- `/wusound_file_test`：强制以**文件**形式发送测试音频，用于排查文件链路。
+- `/wusound_record_test`：强制以**语音**形式发送测试音频，用于排查底层协议端是否支持原生语音。
 
-## 常用配置
+---
 
-```text
-enabled: true
-tts_endpoint: https://v1.wusound.cn/api/tts/simple-generate
-voice_id: 你的悟声角色 ID
-prompt_id: 可选的风格 ID
-audio_format: mp3
-mock_mode: false
-send_as: file
-use_context_send_message: true
-prefer_remote_url: true
-max_output_tokens: 80
-translate_to_japanese: true
-```
+## 常见问题 (FAQ)
 
-`max_output_tokens` 是短回复阈值。超过这个估算 token 数就不会生成音频，避免长回复拖慢群聊。
+- **Q: 为什么发送 `file`（文件）正常，但改成 `record`（语音）就不发了？**
+  - **A**: 不同平台或消息适配器（如某些 QQ 客户端、特定协议端）对 `record` 的支持度不同。如果发送失败，说明底层协议端不支持该语音格式，建议退回使用 `file` 模式。
 
-`prefer_remote_url` 建议保持开启。悟声会返回公网 mp3 地址，直接让平台从 URL 发送文件通常比先下载到 AstrBot 本地再发送更稳定，尤其是 Docker、远程适配器或 OneBot 分离部署时。
+- **Q: 发现生成的音频质量很差、乱读，如何排查？**
+  - **A**: 请在群里发一条触发回复的消息后，查看控制台输出。
+    1. **看翻译结果**：如果混入了中文解释、Markdown 符号，说明是当前大模型未遵循指令，污染了发给 TTS 的文本。
+    2. **看发音效果**：如果 `/wusound_preview` 打印的纯净日语没有问题，但生成的音频依旧差，则是悟声 API 或当前选择的 `voice_id` 本身表现不佳。
 
-`send_as` 默认是 `file`，会发送音频文件。可以改成 `record` 尝试直接发送语音，但不同平台对语音格式和组件支持差异很大，建议先用文件跑通。
+- **Q: 悟声已经扣除积分，但群里没收到音频？**
+  - **A**: 可能是网络超时或发送失败。请在 WebUI 中开启 `mock_mode`（该模式下只会生成 1 秒的本地蜂鸣声并发送）。如果开启 Mock 后依然收不到，说明是 AstrBot 到聊天平台的发送链路存在问题，与悟声 API 无关。
 
-## 零消耗 Mock 测试
+- **Q: 为什么有些回复不会触发语音？**
+  - **A**: 插件具备自动拦截机制。以下情况不会触发：
+    1. 含有代码块、HTTP 链接或以 `/` 开头的指令回复。
+    2. 回复文本长度超过了 `max_output_tokens` 阈值（默认 80），以防长文刷屏。
 
-如果要排查“悟声已扣积分，但群里没有音频”的问题，先开启：
+---
 
-```text
-mock_mode: true
-send_as: file
-use_context_send_message: true
-prefer_remote_url: false
-mock_audio_url: 留空
-```
+## 致谢
 
-开启后插件不会调用悟声 API，也不会调用翻译 LLM，只会生成一个 1 秒 WAV 测试音频并尝试发送。这样可以确认问题到底在悟声接口，还是 AstrBot/平台发送文件链路。
+- [AstrBot](https://github.com/Soulter/AstrBot) - 优秀的 LLM 机器人框架
+- 悟声 AI - 提供高质量的 TTS 接口支持
 
-如果你想测试远程 URL 发送，也可以填写：
+---
 
-```text
-mock_audio_url: https://example.com/test.mp3
-prefer_remote_url: true
-```
+## 许可证
 
-不要把 `mock_audio_url` 填成 `true`。它只能留空，或者填写一个以 `http://`、`https://` 开头的真实音频地址。
-
-## 测试命令
-
-插件提供了三个零消耗测试命令：
-
-```text
-/wusound_test
-/wusound_file_test
-/wusound_record_test
-/wusound_where
-```
-
-`/wusound_test` 使用当前 `send_as` 配置。  
-`/wusound_file_test` 强制发送文件，用于确认文件链路。  
-`/wusound_record_test` 强制发送语音，用于确认 QQ/OneBot 是否支持语音气泡。
-`/wusound_where` 显示当前群号和完整会话标识，方便配置白名单。
-
-建议顺序：
-
-```text
-1. 先运行 /wusound_file_test
-2. 文件能发后，运行 /wusound_record_test
-3. record 成功后，再考虑接回悟声真实音频
-```
-
-## 悟声接口适配
-
-插件默认按下面结构请求悟声：
-
-```json
-{
-  "text": "翻译后的日语文本",
-  "voiceId": "你的语音角色 ID",
-  "promptId": "可选风格 ID",
-  "format": "mp3"
-}
-```
-
-如果你的悟声控制台示例字段不同，可以在 `payload_template` 中覆盖请求体，例如：
-
-```json
-{"content":"{{text}}","voice_id":"你的角色ID","format":"mp3"}
-```
-
-`{{text}}` 会被替换为日语文本。插件支持悟声直接返回音频内容，也支持从 JSON 结果里提取 `url`、`audioUrl`、`audio_url`、`fileUrl`、`audioBase64` 等字段。
-
-## 工作流程
-
-```text
-AstrBot AI 回复
--> 插件读取回复纯文本
--> 估算 token 数并判断是否低于阈值
--> 如果 mock_mode=true，直接生成测试音频
--> 使用当前会话 LLM 翻译成日语
--> 调用悟声实时 TTS
--> 优先读取悟声返回的远程 mp3 URL
--> 使用 AstrBot 主动消息接口发送到当前会话
-```
-
-## 已知限制
-
-- 翻译依赖当前会话可用的 LLM；如果没有可用 LLM，插件会直接把原文送去 TTS。
-- 不同平台对文件消息和语音消息的支持不同；如果文件能发、语音不能发，通常是平台适配器限制。
-- 当前 token 统计是轻量估算，不是精确模型 token 计数。
-- 悟声接口字段如果与默认值不一致，优先通过 `payload_template` 适配。
+本项目采用 [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE) 许可协议。
