@@ -28,7 +28,7 @@
    ```
 2. 克隆本仓库：
    ```bash
-   git clone https://github.com/linglinlinglin/AstrBot-TTS-.git astrbot_plugin_wusound_tts
+   git clone https://github.com/linglinlinglin/astrbot-wusound-tts.git astrbot_plugin_wusound_tts
    ```
 3. 在 AstrBot 管理面板重启框架或重载插件。
 
